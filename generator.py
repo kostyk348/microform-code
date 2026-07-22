@@ -1,235 +1,169 @@
 #!/usr/bin/env python3
 """
-Microform Code Generator — Iteration 1
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Microform Code Generator — Iteration 2 (dual-element + ECC)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Генерирует паттерн из микро-эллипсов для печати.
-Каждый эллипс кодирует 10 бит: угол(6) + размер(2) + вытянутость(2).
-
-  • Угол:      0-179°  (64 шага, ~2.8° точность)  → 6 бит
-  • Размер:    4 уровня (35-75% ячейки)           → 2 бита
-  • Вытянутость: 4 уровня (1.0-2.5×)               → 2 бита
-                        ──────────────────────────
-                         10 бит/эллипс
+Каждая ячейка: главный эллипс + микро-точка = 18 бит.
+Данные защищены Reed-Solomon ECC.
 
 Использование:
   python generator.py --data "Hello, world!" -o test.png
-  python generator.py --grid 100 --dpi 600 -o code.png
+  python generator.py --grid 150 --dpi 1200 -o dense.png
+  python generator.py --demo -o demo.png      # демо-картинка
 """
 
 import argparse
-import hashlib
-import struct
 import numpy as np
 from PIL import Image
+import codec
 
 # ── Константы ─────────────────────────────────────────────────────────────
-BITS_PER_CELL = 10
-ANGLE_BITS = 6
-SIZE_BITS = 2
-ELONG_BITS = 2
-
-# Служебные элементы (в ячейках)
-MARKER_SIZE = 3        # угловые маркеры (ячеек)
-BORDER_WIDTH = 2       # калибровочная рамка (ячеек)
-PADDING = 1            # отступ по краям (ячеек) для белого поля
+MARKER_SIZE = 2        # угловые маркеры (ячеек)
+BORDER_WIDTH = 1       # калибровочная рамка (ячеек)
+PADDING = 1            # отступ по краям
 # ──────────────────────────────────────────────────────────────────────────────
-
-
-# ── Битовые операции ────────────────────────────────────────────────────────
-def _bytes_to_bits(data: bytes) -> list[int]:
-    bits = []
-    for b in data:
-        for i in range(7, -1, -1):
-            bits.append((b >> i) & 1)
-    return bits
-
-
-def _pack_cell_value(user_bits: list[int], offset: int) -> int:
-    """Достать BITS_PER_CELL бит начиная с offset (с паддингом нулями)."""
-    val = 0
-    for i in range(BITS_PER_CELL):
-        pos = offset + i
-        if pos < len(user_bits):
-            val = (val << 1) | user_bits[pos]
-        else:
-            val <<= 1
-    return val
-
-
-# ── Маппинг: значение → параметры эллипса ─────────────────────────────────
-def _angle_from_val(val: int) -> float:
-    """6-bit → угол в градусах (0-179)."""
-    return (val / 63.0) * 179.0
-
-
-def _scale_from_val(val: int) -> float:
-    """2-bit → масштаб (0.35-0.75 от ячейки)."""
-    return 0.35 + val * 0.133
-
-
-def _elong_from_val(val: int) -> float:
-    """2-bit → вытянутость (1.0-2.5)."""
-    return 1.0 + val * 0.5
-
-
-# ── Обратный маппинг (для декодера) ──────────────────────────────────────
-def val_from_angle(deg: float) -> int:
-    return min(63, round(deg / 179.0 * 63))
-
-
-def val_from_scale(scale: float) -> int:
-    return max(0, min(3, round((scale - 0.35) / 0.133)))
-
-
-def val_from_elong(elong: float) -> int:
-    return max(0, min(3, round((elong - 1.0) / 0.5)))
 
 
 # ── 2D-генератор эллипса ─────────────────────────────────────────────────
 def _make_ellipse_mask(size_px: int, angle_deg: float,
                        scale: float, elong: float) -> np.ndarray:
-    """
-    Создать маску эллипса размером size_px × size_px.
-    Возвращает uint8: 0 = фон, 255 = эллипс.
-    """
-    # Используем расстояние до границы эллипса с антиалиасингом
+    """Маска эллипса size_px × size_px, uint8: 0=фон, 255=эллипс."""
     half = size_px / 2.0
     yy, xx = np.ogrid[-half:half, -half:half]
 
     cos_a = np.cos(np.radians(angle_deg))
     sin_a = np.sin(np.radians(angle_deg))
-
-    # Поворот координат
     x_rot = xx * cos_a + yy * sin_a
     y_rot = -xx * sin_a + yy * cos_a
 
-    # Полуоси
     a = half * scale
     b = a / elong
 
-    # Расстояние до границы (нормализованное)
     dist = (x_rot / a) ** 2 + (y_rot / b) ** 2
-
-    # Плавный край (~0.5 px для антиалиасинга)
     alpha = np.clip(1.0 - (dist - 0.85) / 0.3, 0.0, 1.0)
     return (alpha * 255).astype(np.uint8)
 
 
-# ── Генератор паттерна ───────────────────────────────────────────────────
+def _make_dot_mask(size_px: int, dx: float, dy: float,
+                   radius: float) -> np.ndarray:
+    """Маска микро-точки size_px × size_px в позиции (dx, dy) от центра."""
+    half = size_px / 2.0
+    yy, xx = np.ogrid[-half:half, -half:half]
+
+    x_centered = xx - dx
+    y_centered = yy - dy
+    dist = np.sqrt(x_centered ** 2 + y_centered ** 2)
+    alpha = np.clip(1.0 - (dist - radius + 0.5) / 1.0, 0.0, 1.0)
+    return (alpha * 255).astype(np.uint8)
+
+
+# ── Генератор ────────────────────────────────────────────────────────────
 def generate(grid_h: int, grid_w: int, cell_size_px: int,
              data: bytes | None = None) -> np.ndarray:
     """
-    Сгенерировать Microform Code как numpy-массив (uint8, 0-255).
-
-    Args:
-        grid_h: число ячеек данных по вертикали
-        grid_w: число ячеек данных по горизонтали
-        cell_size_px: размер ячейки в пикселях
-        data: байты для кодирования (None = случайные)
+    Сгенерировать Microform Code (dual-element).
 
     Returns:
-        np.ndarray (H, W), uint8: 0=чёрный, 255=белый
+        np.ndarray (H, W), uint8: 0=черный, 255=белый
     """
     off = MARKER_SIZE + BORDER_WIDTH + PADDING
     total_h = grid_h + 2 * off
     total_w = grid_w + 2 * off
 
     # ── Подготовка данных ───────────────────────────────────────────────
-    bits_per_data = grid_h * grid_w * BITS_PER_CELL
+    n_cells = grid_h * grid_w
+    total_bits = n_cells * codec.BITS_PER_CELL
+
     if data is None:
-        # Детерминированные псевдослучайные данные
-        seed = struct.pack(">II", grid_h, grid_w)
-        rng = np.random.default_rng(
-            int.from_bytes(hashlib.sha256(seed).digest()[:8], "big")
-        )
-        data_bytes = rng.bytes(bits_per_data // 8 + 1)
-        data_bits = _bytes_to_bits(data_bytes)
-    else:
-        data_bits = _bytes_to_bits(data)
-        while len(data_bits) < bits_per_data:
-            data_bits.append(0)
+        # Псевдослучайная нагрузка
+        rng = np.random.default_rng(42)
+        data = rng.bytes(total_bits // 8 + 1)
 
-    data_bits = data_bits[:bits_per_data]
+    encoded_bits = codec.encode_bits(data, total_bits)
 
-    # ── Создаём полотно ─────────────────────────────────────────────────
+    # ── Полотно ─────────────────────────────────────────────────────────
     canvas = np.ones((total_h * cell_size_px, total_w * cell_size_px),
                      dtype=np.uint8) * 255
 
-    def _cell_slice(cx: int, cy: int):
-        """(cx, cy) → slice по y, slice по x для доступа к ячейке."""
+    def _cell_rect(cx: int, cy: int):
+        """(cx, cy) → slice_y, slice_x."""
         y1 = cy * cell_size_px
         x1 = cx * cell_size_px
         return (slice(y1, y1 + cell_size_px),
                 slice(x1, x1 + cell_size_px))
 
     def _draw_cell(cx: int, cy: int, value: int):
-        """Нарисовать эллипс в ячейке (cx, cy) по value (0-1023)."""
-        angle_v = (value >> (SIZE_BITS + ELONG_BITS)) & ((1 << ANGLE_BITS) - 1)
-        size_v = (value >> ELONG_BITS) & ((1 << SIZE_BITS) - 1)
-        elong_v = value & ((1 << ELONG_BITS) - 1)
+        """Нарисовать dual-element в ячейке (cx, cy)."""
+        params = codec.cell_value_to_params(value)
+        cs = cell_size_px
 
-        angle = _angle_from_val(angle_v)
-        scale = _scale_from_val(size_v)
-        elong = _elong_from_val(elong_v)
+        # Главный эллипс
+        angle = codec.angle_v_to_deg(params['angle_v'])
+        scale = codec.scale_v_to_frac(params['scale_v'])
+        elong = codec.elong_v_to_ratio(params['elong_v'])
+        mask = _make_ellipse_mask(cs, angle, scale, elong)
 
-        mask = _make_ellipse_mask(cell_size_px, angle, scale, elong)
-        sy, sx = _cell_slice(cx, cy)
-        # Multiply: black on white (255 - mask_dark)
+        # Микро-точка
+        dx = codec.dot_dx_to_px(params['dot_dx'], cs)
+        dy = codec.dot_dy_to_px(params['dot_dy'], cs)
+        rad = codec.dot_rad_to_px(params['dot_rad'])
+        dot_mask = _make_dot_mask(cs, dx, dy, rad)
+
+        # Комбинируем: эллипс + точка (min = dark wins)
+        combined = np.minimum(mask, dot_mask)
+
+        sy, sx = _cell_rect(cx, cy)
         canvas[sy, sx] = np.minimum(canvas[sy, sx],
-                                    255 - mask).astype(np.uint8)
+                                    255 - combined).astype(np.uint8)
 
-    # ── 1. Белый фон уже есть ───────────────────────────────────────────
-
-    # ── 2. Угловые маркеры (чёрные квадраты 3×3) ────────────────────────
+    # ── 1. Угловые маркеры (черные квадраты 3x3) ────────────────────────
     corners = [
         (PADDING, PADDING),
         (total_w - MARKER_SIZE - PADDING, PADDING),
         (PADDING, total_h - MARKER_SIZE - PADDING),
         (total_w - MARKER_SIZE - PADDING, total_h - MARKER_SIZE - PADDING),
     ]
-    for cx, cy in corners:
+    for cxo, cyo in corners:
         for dy in range(MARKER_SIZE):
             for dx in range(MARKER_SIZE):
-                sy, sx = _cell_slice(cx + dx, cy + dy)
+                sy, sx = _cell_rect(cxo + dx, cyo + dy)
                 canvas[sy, sx] = 0
 
-    # ── 3. Калибровочная рамка (шахматка) ──────────────────────────────
+    # ── 2. Калибровочная рамка (шахматка) ──────────────────────────────
     b_start = MARKER_SIZE + PADDING
     b_end_w = total_w - MARKER_SIZE - PADDING
     b_end_h = total_h - MARKER_SIZE - PADDING
 
-    # Top + Bottom
     for cx in range(b_start, b_end_w):
         for dy in range(BORDER_WIDTH):
             val = 0 if ((cx + dy) % 2 == 0) else 255
-            # Top
-            sy, sx = _cell_slice(cx, b_start + dy)
+            sy, sx = _cell_rect(cx, b_start + dy)
             canvas[sy, sx] = val
-            # Bottom
-            sy, sx = _cell_slice(cx, b_end_h - BORDER_WIDTH + dy)
+            sy, sx = _cell_rect(cx, b_end_h - BORDER_WIDTH + dy)
             canvas[sy, sx] = val
 
-    # Left + Right (пропускаем углы)
     for cy in range(b_start + BORDER_WIDTH, b_end_h - BORDER_WIDTH):
         for dx in range(BORDER_WIDTH):
             val = 0 if ((cy + dx) % 2 == 0) else 255
-            # Left
-            sy, sx = _cell_slice(b_start + dx, cy)
+            sy, sx = _cell_rect(b_start + dx, cy)
             canvas[sy, sx] = val
-            # Right
-            sy, sx = _cell_slice(b_end_w - BORDER_WIDTH + dx, cy)
+            sy, sx = _cell_rect(b_end_w - BORDER_WIDTH + dx, cy)
             canvas[sy, sx] = val
 
-    # ── 4. Данные: эллипсы в каждой ячейке ─────────────────────────────
+    # ── 3. Данные: dual-element ─────────────────────────────────────────
     data_idx = 0
     for row in range(grid_h):
         for col in range(grid_w):
             cy = off + row
             cx = off + col
-            value = _pack_cell_value(data_bits, data_idx)
-            _draw_cell(cx, cy, value)
-            data_idx += BITS_PER_CELL
+
+            # Собираем 18 бит → cell value
+            val = 0
+            for b in range(codec.BITS_PER_CELL):
+                val = (val << 1) | encoded_bits[data_idx]
+                data_idx += 1
+
+            _draw_cell(cx, cy, val)
 
     return canvas
 
@@ -237,42 +171,40 @@ def generate(grid_h: int, grid_w: int, cell_size_px: int,
 # ── CLI ──────────────────────────────────────────────────────────────────
 def main():
     parser = argparse.ArgumentParser(
-        description="Microform Code Generator",
+        description="Microform Code Generator v2 (dual-element + ECC)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Примеры:
-  python generator.py -o hello.png --data "Hello, world!"
-  python generator.py --grid 150 --dpi 600 -o dense.png
-  python generator.py --grid 100 --no-border -o raw_ellipses.png
-        """
-    )
+  python generator.py -o test.png --data "Hello world"
+  python generator.py -o dense.png --grid 150 --dpi 1200
+  python generator.py -o demo.png --demo
+        """)
+
     parser.add_argument("--grid", type=int, default=150,
-                        help="ячеек по каждой стороне (default: 150)")
-    parser.add_argument("--grid-h", type=int, default=None,
-                        help="ячеек по вертикали (переопределяет --grid)")
-    parser.add_argument("--grid-w", type=int, default=None,
-                        help="ячеек по горизонтали (переопределяет --grid)")
+                        help="ячеек по стороне (default: 150)")
+    parser.add_argument("--grid-h", type=int, default=None)
+    parser.add_argument("--grid-w", type=int, default=None)
     parser.add_argument("--cell-size", type=float, default=200.0,
-                        help="размер ячейки в микронах (default: 200)")
+                        help="ячейка в микронах (default: 200)")
     parser.add_argument("--dpi", type=int, default=1200,
                         help="DPI вывода (default: 1200)")
     parser.add_argument("--data", type=str, default=None,
-                        help="строка для кодирования (иначе случайные данные)")
-    parser.add_argument("--seed", type=int, default=0,
-                        help="сид для случайных данных (default: 0)")
-    parser.add_argument("-o", "--output", type=str, default="microform_code.png",
-                        help="выходной PNG (default: microform_code.png)")
-    parser.add_argument("--no-border", action="store_true",
-                        help="без калибровочной рамки (только эллипсы)")
-    parser.add_argument("--info", action="store_true",
-                        help="вывести информацию о паттерне")
+                        help="строка для кодирования")
+    parser.add_argument("-o", "--output", type=str,
+                        default="microform_code.png")
+    parser.add_argument("--demo", action="store_true",
+                        help="демо-картинка с тестовыми данными")
 
     args = parser.parse_args()
+
+    if args.demo:
+        args.data = ("КРУТОЙ МИКРОФОРМ КОД v2\n"
+                     "18 бит/ячейку + RS-ECC\n"
+                     "Печатай и сканируй!")
 
     grid_h = args.grid_h or args.grid
     grid_w = args.grid_w or args.grid
 
-    # микрометры → пиксели
     microns_per_inch = 25400
     cell_size_px = max(4, round(args.cell_size * args.dpi / microns_per_inch))
 
@@ -280,40 +212,37 @@ def main():
     data_bytes = None
     if args.data:
         data_bytes = args.data.encode("utf-8")
-        bits_needed = grid_h * grid_w * BITS_PER_CELL
-        bytes_needed = (bits_needed + 7) // 8
-        if len(data_bytes) > bytes_needed:
-            print(f"⚠  Данные ({len(data_bytes)} B) больше чем влезает "
-                  f"({bytes_needed} B). Будут обрезаны.")
-            data_bytes = data_bytes[:bytes_needed]
 
     canvas = generate(grid_h, grid_w, cell_size_px, data=data_bytes)
 
-    # Размер отпечатка
+    # ── Инфо ────────────────────────────────────────────────────────────
     total_off = MARKER_SIZE + BORDER_WIDTH + PADDING
     total_cells_h = grid_h + 2 * total_off
     total_cells_w = grid_w + 2 * total_off
     mm_h = total_cells_h * args.cell_size / 1000
     mm_w = total_cells_w * args.cell_size / 1000
 
-    raw_bits = grid_h * grid_w * BITS_PER_CELL
-    raw_kb = raw_bits / 8 / 1024
+    info = codec.capacity_info(grid_h * grid_w)
+    qr_x = info['data_kb'] / 3.0 if info['data_kb'] else 0
 
-    if args.info or not args.no_border:
-        print(f"[Microform Code]")
-        print(f"  Сетка:            {grid_h}x{grid_w} = {grid_h * grid_w:,} ячеек")
-        print(f"  Размер печати:    {mm_w:.1f}x{mm_h:.1f} мм")
-        print(f"  Ячейка:           {args.cell_size:.0f} мкм ({cell_size_px} px при {args.dpi} DPI)")
-        print(f"  Емкость raw:      {raw_bits:,} бит = {raw_kb:.1f} KB")
-        print(f"  После ECC (~30%): {raw_kb * 0.7:.1f} KB (оценка)")
-        print(f"  x к QR-40 (3 KB): {raw_kb * 0.7 / 3:.1f}x")
-        if args.data:
-            print(f"  Данные:           \"{args.data[:50]}\"")
-            print(f"  Размер данных:    {len(data_bytes)} B")
+    print(f"[Microform Code v2]")
+    print(f"  Сетка:            {grid_h}x{grid_w} = {grid_h*grid_w:,} ячеек")
+    print(f"  Размер печати:    {mm_w:.1f}x{mm_h:.1f} мм")
+    print(f"  Ячейка:           {args.cell_size:.0f} мкм ({cell_size_px} px @ {args.dpi} DPI)")
+    print(f"  Бит/ячейку:       {codec.BITS_PER_CELL} (эллипс 10 + точка 8)")
+    print(f"  ECC:              RS(255,{255-codec.RS_NSYM}) [{codec.RS_NSYM} parity/block]")
+    print(f"  --")
+    print(f"  Raw:              {info['raw_kb']:.1f} KB")
+    print(f"  После RS:         {info['data_kb']:.1f} KB")
+    print(f"  Оverhead RS:      {info['ecc_overhead_pct']:.1f}%")
+    print(f"  x QR-40:          {qr_x:.1f}x")
+
+    if args.data:
+        print(f"  Данные:           \"{args.data[:60]}\"")
 
     img = Image.fromarray(canvas, mode="L")
     img.save(args.output, compress_level=0)
-    print(f"OK: {args.output} ({canvas.shape[1]}x{canvas.shape[0]} px)")
+    print(f"  OK: {args.output} ({canvas.shape[1]}x{canvas.shape[0]} px)")
 
 
 if __name__ == "__main__":
