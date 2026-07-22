@@ -105,9 +105,17 @@ def encode_bits(user_data: bytes, total_bits: int,
     if len(payload) > max_data:
         payload = payload[:max_data]
 
-    # 2. RS-кодирование
+    # 2. Pad с PRNG-шумом (не нулями!)
     pad_len = n_blocks * rs_k - len(payload)
-    padded = payload + b'\x00' * pad_len
+    if pad_len > 0:
+        pad_seed = int.from_bytes(
+            hashlib.sha256(struct.pack(">II", total_bytes, len(payload))).digest()[:4],
+            "big"
+        )
+        pad_rng = np.random.default_rng(pad_seed)
+        padded = payload + pad_rng.bytes(pad_len)
+    else:
+        padded = payload
 
     rs = RSCodec(rs_nsym)
     all_bytes = b''
@@ -115,7 +123,7 @@ def encode_bits(user_data: bytes, total_bits: int,
         block = padded[i * rs_k:(i + 1) * rs_k]
         all_bytes += rs.encode(block)
 
-    # 3. Остаток — PRNG-шум (детерминированный)
+    # 3. Если после RS-блоков ещё осталось место — PRNG-шум
     if len(all_bytes) < total_bytes:
         seed = int.from_bytes(
             hashlib.sha256(struct.pack(">II", total_bytes, len(payload))).digest()[:8],
