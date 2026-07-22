@@ -37,8 +37,11 @@ RS_BLOCK_BYTES = 255  # must be ≤ 255 for GF(256)
 
 
 def _align_total_bytes(capacity_bits: int) -> int:
-    """Округлить ёмкость вниз до 255-байтных блоков."""
+    """Округлить ёмкость вниз до 255-байтных блоков.
+    Если ёмкость меньше одного блока — используем что есть."""
     total_bytes = capacity_bits // 8
+    if total_bytes < RS_BLOCK_BYTES:
+        return total_bytes
     aligned = (total_bytes // RS_BLOCK_BYTES) * RS_BLOCK_BYTES
     return max(RS_BLOCK_BYTES, aligned)
 
