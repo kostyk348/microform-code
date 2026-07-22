@@ -54,14 +54,14 @@ def angle_v_to_deg(v: int) -> float:
     return (v / 63.0) * 179.0
 
 def scale_v_to_frac(v: int) -> float:
-    return 0.40 + v * 0.133  # 0.40, 0.53, 0.67, 0.80
+    return 0.50 + v * 0.133  # 0.50, 0.63, 0.77, 0.90
 
 def elong_v_to_ratio(v: int) -> float:
     return 1.0 + v * 0.5  # 1.0, 1.5, 2.0, 2.5
 
 def dot_dx_to_px(v: int, cell_size_px: int) -> float:
     """dx 0-7 → x-offset от центра ячейки (в пикселях)."""
-    margin = cell_size_px * 0.15
+    margin = cell_size_px * 0.10
     span = cell_size_px * 0.5 - margin
     return -span + v * (2 * span / 7.0)
 
@@ -69,7 +69,7 @@ def dot_dy_to_px(v: int, cell_size_px: int) -> float:
     return dot_dx_to_px(v, cell_size_px)  # symmetric
 
 def dot_rad_to_px(v: int) -> float:
-    return 1.5 + v * 0.5  # 1.5, 2.0, 2.5, 3.0
+    return 1.5 + v * 0.8  # 1.5, 2.3, 3.1, 3.9
 
 
 # ── RS ECC ──────────────────────────────────────────────────────────────

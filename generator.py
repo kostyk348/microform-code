@@ -40,7 +40,7 @@ def _make_ellipse_mask(size_px: int, angle_deg: float,
     b = a / elong
 
     dist = (x_rot / a) ** 2 + (y_rot / b) ** 2
-    alpha = np.clip(1.0 - (dist - 0.85) / 0.3, 0.0, 1.0)
+    alpha = np.clip(1.0 - (dist - 0.90) / 0.2, 0.0, 1.0)
     return (alpha * 255).astype(np.uint8)
 
 
@@ -109,8 +109,8 @@ def generate(grid_h: int, grid_w: int, cell_size_px: int,
         rad = codec.dot_rad_to_px(params['dot_rad'])
         dot_mask = _make_dot_mask(cs, dx, dy, rad)
 
-        # Комбинируем: эллипс + точка (min = dark wins)
-        combined = np.minimum(mask, dot_mask)
+        # Комбинируем: эллипс + точка (max = either dark wins)
+        combined = np.maximum(mask, dot_mask)
 
         sy, sx = _cell_rect(cx, cy)
         canvas[sy, sx] = np.minimum(canvas[sy, sx],
