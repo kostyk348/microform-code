@@ -223,19 +223,18 @@ def main():
     mm_w = total_cells_w * args.cell_size / 1000
 
     info = codec.capacity_info(grid_h * grid_w)
-    qr_x = info['data_kb'] / 3.0 if info['data_kb'] else 0
 
     print(f"[Microform Code v2]")
     print(f"  Сетка:            {grid_h}x{grid_w} = {grid_h*grid_w:,} ячеек")
     print(f"  Размер печати:    {mm_w:.1f}x{mm_h:.1f} мм")
     print(f"  Ячейка:           {args.cell_size:.0f} мкм ({cell_size_px} px @ {args.dpi} DPI)")
     print(f"  Бит/ячейку:       {codec.BITS_PER_CELL} (эллипс 10 + точка 8)")
-    print(f"  ECC:              RS(255,{255-codec.RS_NSYM}) [{codec.RS_NSYM} parity/block]")
+    print(f"  ECC:              RS({codec.RS_N},{codec.RS_K}) [{codec.RS_NSYM} parity/block]")
     print(f"  --")
     print(f"  Raw:              {info['raw_kb']:.1f} KB")
     print(f"  После RS:         {info['data_kb']:.1f} KB")
-    print(f"  Оverhead RS:      {info['ecc_overhead_pct']:.1f}%")
-    print(f"  x QR-40:          {qr_x:.1f}x")
+    print(f"  Overhead RS:      {info['ecc_overhead_pct']:.1f}%")
+    print(f"  x QR-40:          {info['qr_x']:.1f}x")
 
     if args.data:
         print(f"  Данные:           \"{args.data[:60]}\"")

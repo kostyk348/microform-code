@@ -3,17 +3,24 @@
 Microform Code — Codec: data encoding + Reed-Solomon ECC
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Схема кодирования:
-  user data → RS ECC → bit array → cell values → параметры форм
+Схема:
+  user data → [length prefix 4B] → RS(255,223) ECC → PRNG шум в остаток
+  → битовый массив
+
+Весь паттерн заполняется равномерно: сперва RS-блоки (выглядят как шум),
+потом PRNG-шум. Визуально — однородная текстура.
 """
 
+import hashlib
+import struct
+import numpy as np
 from reedsolo import RSCodec
 
 # ── Cell encoding ────────────────────────────────────────────────────────
 # Dual-element: 18 bits per cell
 #   bits 17..8 (10 bits): main ellipse
 #     bits 17..12: angle     (6 bits, 0-63 → 0-179°)
-#     bits 11..10: scale     (2 bits, 0-3 → 0.30-0.65)
+#     bits 11..10: scale     (2 bits, 0-3 → 0.50-0.90)
 #     bits 9..8:  elong     (2 bits, 0-3 → 1.0-2.5)
 #   bits 7..0 (8 bits): micro-dot
 #     bits 7..5:  dot_dx    (3 bits, 0-7 → 7 x-позиций)
@@ -22,10 +29,18 @@ from reedsolo import RSCodec
 
 BITS_PER_CELL = 18
 
-# ── Параметры по умолчанию ──────────────────────────────────────────────
+# ── Параметры ECC ────────────────────────────────────────────────────────
 RS_NSYM = 32        # parity bytes per RS block
 RS_N = 255          # total bytes per RS block
 RS_K = RS_N - RS_NSYM  # 223 data bytes per block
+RS_BLOCK_BYTES = 255  # must be ≤ 255 for GF(256)
+
+
+def _align_total_bytes(capacity_bits: int) -> int:
+    """Округлить ёмкость вниз до 255-байтных блоков."""
+    total_bytes = capacity_bits // 8
+    aligned = (total_bytes // RS_BLOCK_BYTES) * RS_BLOCK_BYTES
+    return max(RS_BLOCK_BYTES, aligned)
 
 
 # ── Маппинг: cell value → параметры ────────────────────────────────────
@@ -41,14 +56,6 @@ def cell_value_to_params(value: int) -> dict:
                 dot_dx=dot_dx, dot_dy=dot_dy, dot_rad=dot_rad)
 
 
-def params_to_value(angle_v: int, scale_v: int, elong_v: int,
-                    dot_dx: int, dot_dy: int, dot_rad: int) -> int:
-    """Параметры → 18-bit cell value."""
-    return ((angle_v & 0x3F) << 12) | ((scale_v & 3) << 10) | \
-           ((elong_v & 3) << 8) | ((dot_dx & 7) << 5) | \
-           ((dot_dy & 7) << 2) | (dot_rad & 3)
-
-
 # ── Маппинг: параметры → физические значения ───────────────────────────
 def angle_v_to_deg(v: int) -> float:
     return (v / 63.0) * 179.0
@@ -60,13 +67,12 @@ def elong_v_to_ratio(v: int) -> float:
     return 1.0 + v * 0.5  # 1.0, 1.5, 2.0, 2.5
 
 def dot_dx_to_px(v: int, cell_size_px: int) -> float:
-    """dx 0-7 → x-offset от центра ячейки (в пикселях)."""
     margin = cell_size_px * 0.10
     span = cell_size_px * 0.5 - margin
     return -span + v * (2 * span / 7.0)
 
 def dot_dy_to_px(v: int, cell_size_px: int) -> float:
-    return dot_dx_to_px(v, cell_size_px)  # symmetric
+    return dot_dx_to_px(v, cell_size_px)
 
 def dot_rad_to_px(v: int) -> float:
     return 1.5 + v * 0.8  # 1.5, 2.3, 3.1, 3.9
@@ -77,99 +83,122 @@ def encode_bits(user_data: bytes, total_bits: int,
                 rs_nsym: int = RS_NSYM) -> list[int]:
     """
     user_data → RS-закодированный битовый массив ровно total_bits.
-    Если user_data не влезает — обрезается.
-    Если влезает с запасом — добивается нулями.
-    """
-    total_bytes = (total_bits + 7) // 8
-    rs_k = 255 - rs_nsym
 
-    # Сколько блоков нужно
+    - Добавляется 4-байтовый length prefix
+    - RS-кодирование до целых блоков
+    - Остаток — PRNG-шум (визуально равномерный орнамент)
+    """
+    total_bytes = _align_total_bytes(total_bits)
+    rs_k = RS_N - rs_nsym
+
     if len(user_data) == 0:
         user_data = b'\x00'
 
-    # Считаем, сколько данных влезет
-    n_blocks = (total_bytes + 254) // 255  # ceil division
-    max_data_bytes = n_blocks * rs_k
+    # 1. Length prefix + данные
+    payload = struct.pack(">I", len(user_data)) + user_data
+    n_blocks = total_bytes // RS_N
+    max_data = n_blocks * rs_k
 
-    if len(user_data) > max_data_bytes:
-        user_data = user_data[:max_data_bytes]
-        print(f"  ⚠  Данные обрезаны до {max_data_bytes} B")
+    if len(payload) > max_data:
+        payload = payload[:max_data]
 
-    # Паддинг до целого числа блоков
-    pad_len = n_blocks * rs_k - len(user_data)
-    padded = user_data + b'\x00' * pad_len
+    # 2. RS-кодирование
+    pad_len = n_blocks * rs_k - len(payload)
+    padded = payload + b'\x00' * pad_len
 
-    # RS-кодирование
     rs = RSCodec(rs_nsym)
-    all_encoded = b''
+    all_bytes = b''
     for i in range(n_blocks):
         block = padded[i * rs_k:(i + 1) * rs_k]
-        encoded = rs.encode(block)  # → 255 bytes
-        all_encoded += encoded
+        all_bytes += rs.encode(block)
 
-    # Обрезаем/добиваем до ровно total_bytes
-    if len(all_encoded) > total_bytes:
-        all_encoded = all_encoded[:total_bytes]
-    elif len(all_encoded) < total_bytes:
-        all_encoded += b'\x00' * (total_bytes - len(all_encoded))
+    # 3. Остаток — PRNG-шум (детерминированный)
+    if len(all_bytes) < total_bytes:
+        seed = int.from_bytes(
+            hashlib.sha256(struct.pack(">II", total_bytes, len(payload))).digest()[:8],
+            "big"
+        )
+        rng = np.random.default_rng(seed)
+        all_bytes += rng.bytes(total_bytes - len(all_bytes))
 
     # → flat bits MSB first
     bits = []
-    for b in all_encoded:
+    for b in all_bytes:
         for i in range(7, -1, -1):
             bits.append((b >> i) & 1)
+
+    # Добиваем ровно до total_bits (на случай если aligned < raw)
+    while len(bits) < total_bits:
+        bits.append(0)
+
     return bits[:total_bits]
 
 
 def decode_bits(bits: list[int], rs_nsym: int = RS_NSYM) -> bytes:
-    """Битовый массив → RS-декодированные данные."""
+    """Битовый массив → RS-декодированные данные (с length prefix)."""
     total_bits = len(bits) - (len(bits) % 8)
     if total_bits < 8:
         return b''
 
+    total_bytes = total_bits // 8
+    aligned = _align_total_bytes(total_bits)
+    if total_bytes > aligned:
+        total_bytes = aligned
+
     # bits → bytes
-    raw_bytes = bytearray()
-    for i in range(0, total_bits, 8):
+    raw = bytearray()
+    for i in range(0, total_bytes * 8, 8):
         byte = 0
         for j in range(8):
             byte = (byte << 1) | bits[i + j]
-        raw_bytes.append(byte)
+        raw.append(byte)
+    raw = bytes(raw)
 
-    total_bytes = len(raw_bytes)
-    n_blocks = (total_bytes + 254) // 255
+    # RS-декодирование
+    n_blocks = len(raw) // RS_N
     rs = RSCodec(rs_nsym)
+    rs_k = RS_N - rs_nsym
 
     decoded = bytearray()
     for i in range(n_blocks):
-        block = raw_bytes[i * 255:(i + 1) * 255]
-        if len(block) < 255:
-            block = block + b'\x00' * (255 - len(block))
+        block = raw[i * RS_N:(i + 1) * RS_N]
         try:
             data, _, _ = rs.decode(block)
             decoded.extend(data)
-        except Exception as e:
-            print(f"  ⚠  RS-ошибка в блоке {i}: {e}")
+        except Exception:
             decoded.extend(block[:rs_k])
 
-    return bytes(decoded)
+    decoded = bytes(decoded)
+
+    # Читаем length prefix
+    if len(decoded) < 4:
+        return decoded
+    data_len = struct.unpack(">I", decoded[:4])[0]
+    if not (0 < data_len < len(decoded) - 4):
+        return decoded[4:]
+    return decoded[4:4 + data_len]
 
 
-# ── Статистика ──────────────────────────────────────────────────────────
+# ── Статистика ёмкости ─────────────────────────────────────────────────
 def capacity_info(grid_cells: int, rs_nsym: int = RS_NSYM):
-    """Вернуть словарь с информацией о ёмкости."""
+    """Информация о ёмкости: сколько данных влезает."""
     raw_bits = grid_cells * BITS_PER_CELL
-    raw_bytes = raw_bits // 8
-    rs_k = 255 - rs_nsym
-    n_blocks = (raw_bytes + 254) // 255
-    data_bytes = n_blocks * rs_k
+    aligned_bytes = _align_total_bytes(raw_bits)
+    n_blocks = aligned_bytes // RS_N
+    rs_k = RS_N - rs_nsym
+    data_bytes = n_blocks * rs_k - 4  # 4B length prefix
+    qr_x = max(0, data_bytes) / 3072  # QR-40 ≈ 3KB
+
     return dict(
         cells=grid_cells,
         bits_per_cell=BITS_PER_CELL,
         raw_bits=raw_bits,
+        used_bits=aligned_bytes * 8,
         raw_kb=raw_bits / 8 / 1024,
-        data_bytes=data_bytes,
-        data_kb=data_bytes / 1024,
+        data_bytes=max(0, data_bytes),
+        data_kb=max(0, data_bytes / 1024),
         rs_nsym=rs_nsym,
         rs_blocks=n_blocks,
-        ecc_overhead_pct=(1 - data_bytes / raw_bytes) * 100 if raw_bytes else 0,
+        ecc_overhead_pct=(1 - max(0, data_bytes) / raw_bits * 8) * 100 if raw_bits else 0,
+        qr_x=qr_x,
     )
