@@ -8,6 +8,45 @@ permissions:
   contents: write
 
 jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Add Android targets
+        run: rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
+      - uses: nttld/setup-ndk@v1
+        id: ndk
+        with:
+          ndk-version: r27d
+          add-to-path: true
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk --locked
+      - name: Build
+        env:
+          ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
+        run: cargo ndk --platform 24 -t arm64-v8a -t armeabi-v7a -t x86_64 build --release
+      - name: Package
+        run: |
+          VER="${GITHUB_REF_NAME#v}"
+          declare -A ABI=(
+            [aarch64-linux-android]=arm64-v8a
+            [armv7-linux-androideabi]=armeabi-v7a
+            [x86_64-linux-android]=x86_64
+          )
+          for t in "${!ABI[@]}"; do
+            NAME="microform-$VER-android-${ABI[$t]}"
+            mkdir -p "dist/$NAME"
+            cp README.md README.ru.md CHANGELOG.md LICENSE "dist/$NAME/" 2>/dev/null || true
+            cp "target/$t/release/microform" "dist/$NAME/"
+            tar -C dist -czf "dist/$NAME.tar.gz" "$NAME"
+          done
+      - name: Attach to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+
   build:
     strategy:
       fail-fast: false

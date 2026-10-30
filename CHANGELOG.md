@@ -4,6 +4,39 @@ All notable changes to Microform Code are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/), versions follow
 semver.
 
+## [1.1.0] — 2026-10-30
+
+The perceptual audit release: "visually unique tiles" becomes a measured
+claim instead of a hand-wave, and Android joins the release targets.
+
+### Added
+- `microform perceptual` — a per-scale perceptual audit. Usable tiles are
+  bucketed by a coarse appearance hash and compared pairwise (mean
+  absolute difference + L∞); at the canonical scale every usable code is
+  additionally compared to all one-step parameter neighbours. Measured
+  reality at 14 px/cell: the closest usable pair differs by 1 gray level
+  on 1 pixel (MAE 0.005/255); 221 of 8.59×10⁹ pairs are within L∞ ≤ 2 —
+  the honest input for the RS budget, with the decode-path consequences
+  spelled out. 4 new tests (28 total).
+- Android release targets: `aarch64-linux-android`, `armv7-linux-androideabi`
+  and `x86_64-linux-android` binaries (NDK r27d via cargo-ndk, API 24)
+  attached to every release — runnable on-device in Termux or via adb.
+- Audit building blocks in the library API:
+  `perceptual::{audit_scale, neighbour_margins, describe_delta}`,
+  `codebook::ScaleCodebook::iter_usable`, public
+  `codebook::render_tile_at`.
+
+### Changed
+- The "visually unique tiles" claim in the README is now backed by the
+  audit: fragile pairs (L∞ ≤ 2) do exist — 221 at the canonical scale,
+  1,828 at 7 px — and are documented with their consequences (a wrong
+  read requires a byte-exact reproduction of the partner tile; anything
+  else degrades to an erasure) instead of being glossed over.
+- The README documents that the usable count is non-monotone in scale
+  (121,285 usable at 28 px/cell: the dot radius is specified in pixels
+  and does not scale with the cell), which is why the cell depth drops
+  to 15 bits at both ends of the supported range.
+
 ## [1.0.0] — 2026-10-30
 
 The first complete release. The Python prototype (flat scripts, cv2 +
