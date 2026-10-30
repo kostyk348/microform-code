@@ -45,7 +45,7 @@ jobs:
           fi
           cd dist
           if [ "${{ matrix.archive }}" = "zip" ]; then
-            zip -r "$NAME.zip" "$NAME"
+            powershell -Command "Compress-Archive -Path '$NAME' -DestinationPath '$NAME.zip' -Force"
           else
             tar czf "$NAME.tar.gz" "$NAME"
           fi
