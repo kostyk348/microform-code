@@ -82,6 +82,7 @@ $ microform demo
 ## Quick start
 
 ```bash
+# prebuilt Linux/macOS/Windows binaries: https://github.com/kostyk348/microform-code/releases
 cargo install --path .          # or: cargo build --release
 
 microform encode --data "Hello, paper!" -o hello.png

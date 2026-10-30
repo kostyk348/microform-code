@@ -84,6 +84,7 @@ $ microform demo
 ## Быстрый старт
 
 ```bash
+# готовые бинарники Linux/macOS/Windows: https://github.com/kostyk348/microform-code/releases
 cargo install --path .          # или: cargo build --release
 
 microform encode --data "Hello, paper!" -o hello.png
