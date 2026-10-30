@@ -20,7 +20,7 @@
 //! ```
 //!
 //! The CLI mirrors the library: `microform encode`, `decode`, `capacity`,
-//! `codebook`, `demo`.
+//! `codebook`, `perceptual`, `demo`.
 
 pub mod codebook;
 pub mod codec;
@@ -31,12 +31,14 @@ pub mod imgproc;
 pub mod layout;
 pub mod locate;
 pub mod patterns;
+pub mod perceptual;
 pub mod pngio;
 pub mod render;
 
 pub use codebook::{get as codebook, get_for_scale, Codebook, ScaleCodebook};
 pub use codec::{capacity_info, decode as decode_cells, encode as encode_cells, Capacity};
 pub use decode::{decode_image, decode_png, DecodeFailure, Decoded};
+pub use perceptual::{audit_scale, neighbour_margins, ScaleAudit};
 pub use pngio::GrayImage;
 pub use render::{generate, RenderSpec};
 

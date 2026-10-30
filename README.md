@@ -39,6 +39,10 @@ here) that covers the whole paper-code story:
   markers; each scale gets its own codebook of tiles that stay unique at
   that scale, and the cell bit depth adapts (17 → 15 → 12 bits, always a
   divisor of a 2040-bit block)
+* 🔬 **Perceptual audit** — `microform perceptual` measures how close two
+  usable tiles can *look*: at the canonical scale the closest pair
+  differs by 1 gray level on 1 pixel, and 221 of 8.59×10⁹ pairs sit
+  within L∞ ≤ 2 — measured, published, and priced into the RS budget
 * 🖨️ **Print-friendly** — pure black-and-white raster, grid auto-detected,
   no quiet-zone gymnastics beyond 1 cell of padding
 
@@ -82,12 +86,13 @@ $ microform demo
 ## Quick start
 
 ```bash
-# prebuilt Linux/macOS/Windows binaries: https://github.com/kostyk348/microform-code/releases
+# prebuilt Linux/macOS/Windows/Android binaries: https://github.com/kostyk348/microform-code/releases
 cargo install --path .          # or: cargo build --release
 
 microform encode --data "Hello, paper!" -o hello.png
 microform decode hello.png --text
 microform capacity              # the three print presets
+microform perceptual            # how close can two tiles look
 microform demo                  # 8 honest checks, ~2 s
 ```
 
@@ -128,6 +133,29 @@ assert_eq!(decode_png("hello.png".as_ref(), None).unwrap().data, b"Hello, paper!
 * The Python prototype that started this repo lives in the git history;
   the Rust crate is the reference implementation since v1.0.0.
 
+## Perceptual margins
+
+The codebook guarantees tiles are *byte-distinct*; `microform perceptual`
+measures how *visually* close two usable tiles can get (real output):
+
+```text
+$ microform perceptual
+
+scale 14 px/cell | usable 131072 codes | 17 bits/cell
+  closest pair: MAE 0.005/255 — codes 3034 ↔ 3038 (dot dy +1)
+  fragile pairs: L∞≤2: 221, L∞≤4: 353, L∞≤8: 467
+  verdict: WARN — fragile pairs exist; RS(255,223) absorbs the residual confusion
+```
+
+With *exact* lookup a scan turns a cell into a wrong code only if the
+corrupted tile reproduces the partner byte-for-byte — for the 221 fragile
+pairs that is a one-pixel, one-level change; every other deviation lands
+on no tile at all and becomes a known-position **erasure**, which RS
+recovers (10 per block). The audit also explains the scale books: the
+usable count is non-monotone in scale (121,285 usable at 28 px — the dot
+radius is specified in pixels and does not scale with the cell), which is
+why the cell depth is 15 bits at both ends of the supported range.
+
 ## Project layout
 
 ```
@@ -140,9 +168,10 @@ src/imgproc.rs     — Otsu, erosion, connected components, blur, noise
 src/homography.rs  — exact 4-point DLT solver
 src/locate.rs      — marker search, pitch and grid-size estimation
 src/decode.rs      — scale-independent decode pipeline
+src/perceptual.rs  — perceptual audit: fragile pairs, param margins
 src/demo.rs        — the 8 honest checks
-src/main.rs        — hand-rolled CLI (encode/decode/capacity/codebook/demo)
-tests/             — codebook, codec, roundtrip, CLI integration (24 tests)
+src/main.rs        — hand-rolled CLI (encode/decode/capacity/codebook/perceptual/demo)
+tests/             — codebook, codec, roundtrip, perceptual, CLI integration (28 tests)
 ```
 
 ## License

@@ -1,6 +1,6 @@
 [package]
 name = "microform"
-version = "1.0.0"
+version = "1.1.0"
 edition = "2021"
 license = "Apache-2.0"
 description = "Microform Code — a dense 2D code on paper: 17 bits per cell (ellipse + micro-dot), RS(255,223), ×5 QR capacity at the same physical size"

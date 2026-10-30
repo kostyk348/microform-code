@@ -5,6 +5,7 @@
 //!   microform decode IMG.png [--grid N] [-o OUT.bin] [--text]
 //!   microform capacity [--grid N]
 //!   microform codebook
+//!   microform perceptual [--scales 7,14,28]
 //!   microform demo [-o OUT.png]
 
 use std::path::Path;
@@ -15,6 +16,7 @@ use microform::codebook;
 use microform::codec;
 use microform::decode::{decode_image, DecodeFailure};
 use microform::demo;
+use microform::perceptual;
 use microform::pngio::{read_gray, write_gray, GrayImage};
 use microform::render::{generate, physical_mm, RenderSpec};
 
@@ -30,6 +32,7 @@ fn main() -> ExitCode {
         "decode" => cmd_decode(&flags),
         "capacity" => cmd_capacity(&flags),
         "codebook" => cmd_codebook(),
+        "perceptual" => cmd_perceptual(&flags),
         "demo" => cmd_demo(&flags),
         "--help" | "-h" | "help" => {
             print_usage();
@@ -99,6 +102,7 @@ USAGE:
     microform decode IMG.png [--grid N] [-o OUT.bin] [--text]
     microform capacity [--grid N]
     microform codebook
+    microform perceptual [--scales 7,14,28]
     microform demo [-o OUT.png]
 
 Defaults: grid 92, cell 300 µm, 1200 dpi → 14 px/cell, ~15.2 KB payload.",
@@ -294,6 +298,67 @@ fn cmd_codebook() -> ExitCode {
         build,
         cb.fingerprint()
     );
+    ExitCode::SUCCESS
+}
+
+fn cmd_perceptual(flags: &Flags) -> ExitCode {
+    let scales: Vec<u32> = flag(flags, "scales")
+        .map(|v| v.split(',').filter_map(|x| x.trim().parse().ok()).collect())
+        .unwrap_or_else(|| vec![7, 14, 28]);
+
+    println!("perceptual audit — how close can two usable tiles look\n");
+    let canonical = codebook::get();
+    let t0 = Instant::now();
+
+    let fmt = |x: f32| {
+        if x.is_finite() {
+            format!("{x:.3}")
+        } else {
+            "—".to_string()
+        }
+    };
+
+    for s in scales {
+        let s = s.clamp(4, 32);
+        let book = codebook::get_for_scale(s);
+        let a = perceptual::audit_scale(&book);
+        println!(
+            "scale {} px/cell | usable {} codes | {} bits/cell",
+            a.cell_px, a.usable, a.bits
+        );
+        match a.closest {
+            Some((ca, cb)) => println!(
+                "  closest pair: MAE {:.3}/255 — codes {ca} ↔ {cb} ({})",
+                a.min_mae,
+                perceptual::describe_delta(canonical, ca, cb)
+            ),
+            None => println!("  closest pair: none found by the hash net"),
+        }
+        println!(
+            "  fragile pairs: L∞≤2: {}, L∞≤4: {}, L∞≤8: {}",
+            a.linf_le_2, a.linf_le_4, a.linf_le_8
+        );
+        println!(
+            "  verdict: {}",
+            if a.pass() {
+                "PASS — no fragile pairs; scan noise degrades to erasures, not wrong reads"
+            } else {
+                "WARN — fragile pairs exist; RS(255,223) absorbs the residual confusion"
+            }
+        );
+        println!();
+    }
+
+    let margins = perceptual::neighbour_margins(canonical);
+    println!(
+        "one-step param margins at the canonical {} px (min MAE per one-step neighbour):",
+        microform::layout::CELL_PX
+    );
+    for (i, name) in perceptual::PARAM_NAMES.iter().enumerate() {
+        println!("  {name:<11} {}", fmt(margins[i]));
+    }
+
+    println!("\naudit took {:.1?}", t0.elapsed());
     ExitCode::SUCCESS
 }
 

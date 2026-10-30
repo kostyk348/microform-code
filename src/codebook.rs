@@ -259,9 +259,18 @@ impl ScaleCodebook {
     pub fn code(&self, index: u32) -> u32 {
         self.codes[index as usize]
     }
+
+    /// Iterate `(canonical code, tile)` over all usable codes.
+    pub fn iter_usable(&self) -> impl Iterator<Item = (u32, &[u8])> + '_ {
+        self.reverse
+            .iter()
+            .map(|(t, &i)| (self.codes[i as usize], t.as_slice()))
+    }
 }
 
-fn render_tile_at(params: Params, cell_px: u32) -> Vec<u8> {
+/// Render one parameter tuple at an arbitrary integer cell size.
+/// Used by the scale codebooks and the perceptual audit.
+pub fn render_tile_at(params: Params, cell_px: u32) -> Vec<u8> {
     let (av, sv, ev, dx, dy, r) = params;
     let em = crate::patterns::ellipse_mask(
         cell_px,
