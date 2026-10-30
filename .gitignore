@@ -4,3 +4,13 @@ __pycache__/
 *.pkl
 output/
 debug_*.py
+dist/
+*.apk
+*.jks
+
+# Android (the jniLibs are built in CI by cargo-ndk)
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/app/src/main/jniLibs/

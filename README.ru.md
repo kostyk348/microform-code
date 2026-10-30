@@ -89,7 +89,8 @@ $ microform demo
 ## Быстрый старт
 
 ```bash
-# готовые бинарники Linux/macOS/Windows/Android: https://github.com/kostyk348/microform-code/releases
+# готовые бинарники (десктоп + Android CLI) и Android-APK:
+#   https://github.com/kostyk348/microform-code/releases
 cargo install --path .          # или: cargo build --release
 
 microform encode --data "Hello, paper!" -o hello.png
@@ -108,6 +109,24 @@ let img = generate(RenderSpec::default(), b"Hello, paper!");
 pngio::write_gray("hello.png".as_ref(), &img).unwrap();
 assert_eq!(decode_png("hello.png".as_ref(), None).unwrap().data, b"Hello, paper!");
 ```
+
+## Android
+
+С каждым релизом поставляются два Android-артефакта:
+
+- **APK-приложение** — `microform-<ver>.apk` (arm64-v8a / armeabi-v7a /
+  x86_64, Android 8.0+). Вводите текст → получаете печатный код 92×92
+  как PNG (можно отправить и распечатать), либо наводите камеру на
+  напечатанный код и читаете данные вживую. Rust-ядро компилируется в
+  `libmicroform.so` (cargo-ndk, JNI) и делает всё кодирование/декодирование
+  на устройстве, офлайн; интерфейс — тонкий слой Kotlin + CameraX в
+  [`android/`](android).
+- **CLI-бинарники** — `microform-<ver>-android-<abi>.tar.gz` для Termux
+  или `adb`.
+
+Код 92×92 по умолчанию вмещает **15 606 байт** полезной нагрузки
+(70 RS-блоков × 223 байта − 4 байта префикса длины); `encodePng`
+отвергает более длинный ввод вместо молчаливой обрезки.
 
 ## Как это работает
 
@@ -177,9 +196,11 @@ src/homography.rs  — точный решатель DLT по 4 точкам
 src/locate.rs      — поиск маркеров, оценка шага и размера сетки
 src/decode.rs      — масштабо-независимый конвейер декодирования
 src/perceptual.rs  — перцептивный аудит: хрупкие пары, маржи параметров
+src/jni.rs         — JNI-мост для Android-приложения (фича `jni`)
 src/demo.rs        — 8 честных проверок
 src/main.rs        — CLI без зависимостей (encode/decode/capacity/codebook/perceptual/demo)
-tests/             — кодбук, кодек, roundtrip, перцептивность, CLI (28 тестов)
+android/           — приложение Kotlin + CameraX поверх ядра (libmicroform.so)
+tests/             — кодбук, кодек, roundtrip, перцептивность, CLI (30 тестов)
 ```
 
 ## Лицензия

@@ -4,6 +4,37 @@ All notable changes to Microform Code are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/), versions follow
 semver.
 
+## [1.2.0] — 2026-10-30
+
+The Android app release: the Rust core ships as a JNI library inside a
+small Kotlin/CameraX app that renders codes and reads them live from the
+camera — no server, no dependency on the desktop CLI.
+
+### Added
+- Android APK (`microform-<ver>.apk`, arm64-v8a / armeabi-v7a / x86_64,
+  minSdk 26): type text → get the 92×92 code as a shareable PNG, or
+  point the camera at a printed code and get the payload back. Built in
+  CI (`cargo-ndk` → `libmicroform.so` in 3 ABIs → Gradle assembleRelease,
+  signed with a per-run keystore).
+- JNI bridge `microform::jni` (feature `jni`): `encodePng`,
+  `decodePngBytes`, `decodeGray`. Decode misses return null *without*
+  raising — a frame with no code is a normal outcome, and a pending
+  exception would abort the next JNI call on the analyzer thread.
+  Desktop builds (no feature) stay dependency-free.
+- In-memory PNG I/O: `pngio::{encode_gray, decode_gray}` — the app path
+  (generate → PNG bytes → decode) is now covered by tests end to end.
+- `android/` — Kotlin + CameraX app: Y-plane grayscale analysis at
+  ~1600×1200, sensor-rotation handling, decode on a background thread,
+  PNG saved to app storage and shared via FileProvider. Localized EN/RU.
+
+### Notes
+- The default 92×92 code holds **15,606 bytes** of payload (70 RS blocks
+  × 223 − 4-byte length prefix). `encodePng` checks the capacity and
+  rejects longer input — the codec itself would truncate silently.
+- Live camera decoding relies on exact tile matching + RS erasure
+  recovery (up to 10 dead cells per 120-cell block); a fuzzy/perceptual
+  tile matcher remains the known next step for poor print quality.
+
 ## [1.1.0] — 2026-10-30
 
 The perceptual audit release: "visually unique tiles" becomes a measured
