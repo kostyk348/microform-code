@@ -95,8 +95,7 @@ fn decode_png_bytes<'local>(
         .convert_byte_array(png)
         .map_err(|e| format!("cannot read input: {e}"))?;
     let img = crate::pngio::decode_gray(&bytes)?;
-    let decoded = crate::decode::decode_image(&img, None)
-        .map_err(|e| format!("decode: {e}"))?;
+    let decoded = crate::decode::decode_image(&img, None).map_err(|e| format!("decode: {e}"))?;
     env.byte_array_from_slice(&decoded.data)
         .map_err(|e| format!("cannot create result array: {e}"))
 }
@@ -142,8 +141,7 @@ fn decode_gray_frame<'local>(
         h,
         data: buf[..w * h].to_vec(),
     };
-    let decoded = crate::decode::decode_image(&img, None)
-        .map_err(|e| format!("decode: {e}"))?;
+    let decoded = crate::decode::decode_image(&img, None).map_err(|e| format!("decode: {e}"))?;
     env.byte_array_from_slice(&decoded.data)
         .map_err(|e| format!("cannot create result array: {e}"))
 }
