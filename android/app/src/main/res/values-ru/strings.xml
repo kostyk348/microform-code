@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="status_idle">Rust-ядро %1$s · 17 бит на клетку · RS(255,223)</string>
+    <string name="input_hint">Текст для кода (до 15 606 байт)</string>
+    <string name="encode">Создать код</string>
+    <string name="share">Поделиться PNG</string>
+    <string name="share_title">Поделиться PNG-кодом</string>
+    <string name="empty_input">Сначала введите текст</string>
+    <string name="encoding">Кодирую…</string>
+    <string name="encode_failed">Не удалось закодировать</string>
+    <string name="encoded_ok">Код %1$d×%2$d px, PNG %3$d КБ%4$s</string>
+    <string name="saved_to">\u0020· сохранён: %1$s</string>
+    <string name="code_image_desc">Сгенерированный код Microform</string>
+    <string name="scan">Сканировать камерой</string>
+    <string name="stop_scan">Стоп</string>
+    <string name="scan_hint">Наведите камеру на напечатанный код, держите ровно</string>
+    <string name="scan_stopped">Камера остановлена</string>
+    <string name="decoded_ok">Декодировано %1$d байт:\n%2$s</string>
+    <string name="binary_payload">(бинарные данные, %1$d байт)</string>
+    <string name="no_camera_permission">Для сканирования нужно разрешение на камеру</string>
+</resources>

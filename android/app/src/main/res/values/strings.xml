@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Microform</string>
+    <string name="status_idle">Rust core %1$s · 17 bits per cell · RS(255,223)</string>
+    <string name="input_hint">Text to encode (up to 15,606 bytes)</string>
+    <string name="encode">Create code</string>
+    <string name="share">Share PNG</string>
+    <string name="share_title">Share the code PNG</string>
+    <string name="empty_input">Enter some text first</string>
+    <string name="encoding">Encoding…</string>
+    <string name="encode_failed">Could not encode</string>
+    <string name="encoded_ok">Code %1$d×%2$d px, %3$d KB PNG%4$s</string>
+    <string name="saved_to">\u0020· saved: %1$s</string>
+    <string name="code_image_desc">Generated Microform code</string>
+    <string name="scan">Scan with camera</string>
+    <string name="stop_scan">Stop</string>
+    <string name="scan_hint">Point the camera at a printed code, hold steady</string>
+    <string name="scan_stopped">Camera stopped</string>
+    <string name="decoded_ok">Decoded %1$d bytes:\n%2$s</string>
+    <string name="binary_payload">(binary payload, %1$d bytes)</string>
+    <string name="no_camera_permission">Camera permission is required for scanning</string>
+</resources>

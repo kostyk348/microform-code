@@ -28,6 +28,11 @@ pub mod decode;
 pub mod demo;
 pub mod homography;
 pub mod imgproc;
+
+/// JNI bridge for the Android app — compiled only with `--features jni`.
+#[cfg(feature = "jni")]
+pub mod jni;
+
 pub mod layout;
 pub mod locate;
 pub mod patterns;

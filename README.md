@@ -86,7 +86,8 @@ $ microform demo
 ## Quick start
 
 ```bash
-# prebuilt Linux/macOS/Windows/Android binaries: https://github.com/kostyk348/microform-code/releases
+# prebuilt binaries (desktop + Android CLI) and the Android APK:
+#   https://github.com/kostyk348/microform-code/releases
 cargo install --path .          # or: cargo build --release
 
 microform encode --data "Hello, paper!" -o hello.png
@@ -105,6 +106,23 @@ let img = generate(RenderSpec::default(), b"Hello, paper!");
 pngio::write_gray("hello.png".as_ref(), &img).unwrap();
 assert_eq!(decode_png("hello.png".as_ref(), None).unwrap().data, b"Hello, paper!");
 ```
+
+## Android
+
+Every release ships two Android deliverables:
+
+- **APK app** — `microform-<ver>.apk` (arm64-v8a / armeabi-v7a / x86_64,
+  Android 8.0+). Type text → get the printable 92×92 code as a PNG you
+  can share and print, or point the camera at a printed code and read
+  the payload live. The Rust core is compiled to `libmicroform.so`
+  (cargo-ndk, JNI) and does all encoding/decoding on-device, offline;
+  the UI is a thin Kotlin + CameraX layer in [`android/`](android).
+- **CLI binaries** — `microform-<ver>-android-<abi>.tar.gz` for Termux
+  or `adb`.
+
+The default 92×92 code holds **15,606 bytes** of payload (70 RS blocks
+× 223 bytes − 4-byte length prefix); `encodePng` rejects longer input
+instead of silently truncating.
 
 ## How it works
 
@@ -169,9 +187,11 @@ src/homography.rs  — exact 4-point DLT solver
 src/locate.rs      — marker search, pitch and grid-size estimation
 src/decode.rs      — scale-independent decode pipeline
 src/perceptual.rs  — perceptual audit: fragile pairs, param margins
+src/jni.rs         — JNI bridge for the Android app (feature `jni`)
 src/demo.rs        — the 8 honest checks
 src/main.rs        — hand-rolled CLI (encode/decode/capacity/codebook/perceptual/demo)
-tests/             — codebook, codec, roundtrip, perceptual, CLI integration (28 tests)
+android/           — Kotlin + CameraX app wrapping the core as libmicroform.so
+tests/             — codebook, codec, roundtrip, perceptual, CLI integration (30 tests)
 ```
 
 ## License
