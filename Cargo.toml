@@ -1,0 +1,21 @@
+[package]
+name = "microform"
+version = "1.0.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Microform Code — a dense 2D code on paper: 17 bits per cell (ellipse + micro-dot), RS(255,223), ×5 QR capacity at the same physical size"
+repository = "https://github.com/kostyk348/microform-code"
+readme = "README.md"
+keywords = ["barcode", "qr-code", "reed-solomon", "paper", "data-matrix"]
+categories = ["encoding", "multimedia::images"]
+
+[dependencies]
+png = "0.17"
+reed-solomon = "0.2"
+
+[profile.test]
+opt-level = 3
+
+[profile.release]
+opt-level = 3
+lto = true

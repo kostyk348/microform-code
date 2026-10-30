@@ -1,11 +1,6 @@
+/target
 __pycache__/
 *.pyc
-*.egg-info/
-.venv/
-venv/
-*.png
 *.pkl
 output/
-tests/
 debug_*.py
-test_300um*.py
