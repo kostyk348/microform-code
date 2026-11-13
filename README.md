@@ -1,4 +1,21 @@
+<div align="center">
+
+<img src="docs/banner.svg" alt="microform-code banner" width="1000">
+
 # Microform Code
+
+[![CI](https://github.com/kostyk348/microform-code/actions/workflows/ci.yml/badge.svg)](https://github.com/kostyk348/microform-code/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/kostyk348/microform-code?sort=semver&color=blue)](https://github.com/kostyk348/microform-code/releases)
+[![License](https://img.shields.io/badge/license-Apache--2.0-green)](https://github.com/kostyk348/microform-code/blob/master/LICENSE)
+
+![Rust](https://img.shields.io/badge/rust-stable-orange)
+![Dependencies](https://img.shields.io/badge/dependencies-2-informational)
+![demo](assets/promo/demo_terminal.png)
+
+</div>
+
+---
+
 
 ### Paper is the storage medium. The printer is the write head.
 
