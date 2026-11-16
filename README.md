@@ -25,11 +25,6 @@ codebook keeps only the parameter sets that render to visually unique tiles,
 and RS(255,223) protects the bitstream. At 300 µm/cell a 30×30 mm sticker
 holds ~15 KB — about ×5 a QR-40 of the same size.**
 
-[![CI](https://github.com/kostyk348/microform-code/actions/workflows/ci.yml/badge.svg)](https://github.com/kostyk348/microform-code/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/kostyk348/microform-code?sort=semver&color=blue)](https://github.com/kostyk348/microform-code/releases)
-[![License](https://img.shields.io/badge/license-Apache--2.0-green)](https://github.com/kostyk348/microform-code/blob/master/LICENSE)
-![Rust](https://img.shields.io/badge/rust-stable-orange)
-![Dependencies](https://img.shields.io/badge/dependencies-2-informational)
 
 [**English**](README.md) · [Русский](README.ru.md)
 
